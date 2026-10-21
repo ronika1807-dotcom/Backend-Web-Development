@@ -22,5 +22,30 @@
 // Hint: express-rate-limit returns a middleware function — export it directly:
 //   const rateLimit = require('express-rate-limit');
 //   module.exports = rateLimit({ ...options });
+const rateLimit = require('express-rate-limit');
+module.exports = rateLimit({
+  windowMs: 15 * 60 * 1000,      // 15 minutes
+  max: 5,                        // 5 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,  // only failed attempts count
+  handler: (req, res) => {
+    const resetTime = req.rateLimit && req.rateLimit.resetTime;
+    const retryAfterSeconds = resetTime instanceof Date
+      ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
+      : 15 * 60;
 
-module.exports = (req, res, next) => next(); // TODO: replace this stub
+    res.set('Retry-After', String(retryAfterSeconds));
+    return res.status(429).json({
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts. Please try again later.'
+      }
+    });
+  }
+});
+
+// In a multi-instance deployment, configure rate-limit-redis as this limiter's
+// store and connect every instance to the same Redis database. The default
+// in-memory store is per process, so a load balancer can spread a client's
+// requests across N instances and effectively give that client N times the limit.
